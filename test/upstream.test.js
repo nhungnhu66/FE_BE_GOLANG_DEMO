@@ -7,6 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
@@ -61,7 +62,8 @@ test('đường thành công: byte SSE về NGUYÊN VĂN, đúng thứ tự', as
             });
             assert.equal(r.ok, true);
             assert.equal(r.code, END_CODES.ok);
-            const joined = got.join('');
+            assert.ok(Buffer.isBuffer(got[0]), 'phải chuyển tiếp BYTE THÔ, không giải mã ra chuỗi');
+            const joined = Buffer.concat(got).toString('utf8');
             assert.ok(joined.includes('"Xin"'));
             assert.ok(joined.indexOf('Xin') < joined.indexOf('chào'), 'thứ tự phải giữ nguyên');
             assert.ok(joined.endsWith('data: [DONE]\n\n'));
@@ -262,7 +264,64 @@ test('ký tự nhiều byte bị cắt ĐÔI giữa hai mảnh vẫn ghép lại
                 onChunk: (t) => got.push(t),
             });
             assert.equal(r.ok, true);
-            assert.ok(got.join('').includes('Chào'), 'không được ra ký tự hỏng');
+            assert.ok(Buffer.concat(got).toString('utf8').includes('Chào'), 'không được ra ký tự hỏng');
+        },
+    );
+});
+
+test('mốc `\ndata:` bị mạng cắt ĐÔI vẫn dò ra — nếu không thì đồng hồ câm CẮT OAN lượt đang chạy tốt', async () => {
+    await withServer(
+        (_req, res) => {
+            sseHead(res);
+            res.write(Buffer.from('\nda', 'utf8'));
+            setTimeout(() => res.write(Buffer.from('ta: {"choices":[]}\n\n', 'utf8')), 60);
+            setTimeout(() => res.end(), 500);
+        },
+        async ({ baseUrl }) => {
+            const r = await streamChat({
+                baseUrl,
+                apiKey: 'k',
+                // Hạn CÂM 250ms: ngắn hơn lúc luồng kết thúc (500ms) nên nếu không ghép được mốc bị
+                // cắt đôi thì đồng hồ câm sẽ nổ — đó chính là ca cần bắt.
+                body: BODY,
+                firstTokenMs: 250,
+                deadlineMs: 10_000,
+                onChunk: () => {},
+            });
+            assert.equal(r.ok, true, `phải chạy tới cùng, nhận được: ${r.code}`);
+        },
+    );
+});
+
+test('onChunk trả Promise thì vòng đọc PHẢI chờ — đó là đường áp lực ngược', async () => {
+    await withServer(
+        (_req, res) => {
+            sseHead(res);
+            for (let i = 0; i < 20; i++) res.write(`data: {"i":${i}}\n\n`);
+            res.end();
+        },
+        async ({ baseUrl }) => {
+            let inFlight = 0;
+            let overlap = false;
+            const r = await streamChat({
+                baseUrl,
+                apiKey: 'k',
+                body: BODY,
+                firstTokenMs: 5_000,
+                deadlineMs: 10_000,
+                onChunk: () => {
+                    inFlight += 1;
+                    if (inFlight > 1) overlap = true;
+                    return new Promise((resolve) => {
+                        setTimeout(() => {
+                            inFlight -= 1;
+                            resolve();
+                        }, 5);
+                    });
+                },
+            });
+            assert.equal(r.ok, true);
+            assert.equal(overlap, false, 'không được đọc mảnh kế khi mảnh trước chưa được nhận xong');
         },
     );
 });

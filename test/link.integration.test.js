@@ -8,6 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
@@ -180,7 +181,8 @@ test('toàn tuyến: bắt tay → khai model → chạy một lượt → byte 
     assert.equal(end.code, END_CODES.ok);
 
     // Ghép lại phải BẰNG ĐÚNG luồng upstream — không thiếu, không thừa, không đảo.
-    const rebuilt = chunks.map((c) => c.data).join('');
+    assert.ok(Buffer.isBuffer(chunks[0].data), 'frame phải là BYTE THÔ, không phải chuỗi đã giải mã');
+    const rebuilt = Buffer.concat(chunks.map((c) => c.data)).toString('utf8');
     assert.equal(rebuilt, SSE_BODY);
     // `usage` (số token để tính tiền) và `[DONE]` nằm ở mảnh cuối — đúng chỗ dễ mất nhất.
     assert.ok(rebuilt.includes('"total_tokens":7'));
@@ -299,4 +301,108 @@ test('jobId trùng bị từ chối — hai luồng byte cùng id là hỏng kh�
 
     socket.emit(SERVER_EVENTS.chatCancel, { jobId: 'same' });
     await waitFor(socket, CLIENT_EVENTS.chatEnd);
+});
+
+test('TẢI NẶNG: 120 lượt song song — không lượt nào lẫn byte sang lượt khác', async (t) => {
+    // Upstream nhả byte MANG DẤU của chính lượt đó, chia thành nhiều mảnh nhỏ để ép các lượt đan xen
+    // nhau trên cùng một vòng lặp sự kiện. Nếu sổ job hoặc bộ gom mảnh có chỗ dùng chung nhầm, các
+    // luồng sẽ trộn vào nhau — và đó là kiểu hỏng tệ nhất: không lỗi, chỉ là câu trả lời của người này
+    // rơi sang người kia.
+    const PARTS = 12;
+    const upstreamServer = createServer((req, res) => {
+        if (req.url.endsWith('/models')) {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ data: [{ id: 'mimo-v2.5-pro' }] }));
+            return;
+        }
+        const chunks = [];
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', () => {
+            const mark = JSON.parse(Buffer.concat(chunks).toString('utf8')).messages[0].content;
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            let i = 0;
+            const tick = setInterval(() => {
+                if (i >= PARTS) {
+                    clearInterval(tick);
+                    res.end('data: [DONE]\n\n');
+                    return;
+                }
+                res.write(`data: {"m":"${mark}","i":${i}}\n\n`);
+                i += 1;
+            }, 2);
+            res.on('close', () => clearInterval(tick));
+        });
+    });
+    await new Promise((r) => upstreamServer.listen(0, '127.0.0.1', r));
+    const upstreamUrl = `http://127.0.0.1:${upstreamServer.address().port}/v1`;
+
+    const backend = await startBackend();
+    const link = new GatewayLink({
+        config: baseConfig({
+            backendUrl: backend.url,
+            upstreamUrl,
+            overrides: { maxConcurrency: 200, flushIntervalMs: 10 },
+        }),
+        logger: createLogger({ level: 'error' }),
+    });
+    t.after(async () => {
+        await link.shutdown(0);
+        await backend.close();
+        await new Promise((r) => upstreamServer.close(r));
+    });
+
+    const waiting = waitForGateway(backend);
+    link.start();
+    const { socket } = await waiting;
+
+    const N = 120;
+    const byJob = new Map();
+    for (let i = 0; i < N; i++) byJob.set(`job-${i}`, { parts: [], seqs: [], end: null });
+
+    socket.on(CLIENT_EVENTS.chatChunk, ({ jobId, seq, data }) => {
+        const slot = byJob.get(jobId);
+        slot.parts.push(data);
+        slot.seqs.push(seq);
+    });
+
+    const allEnded = new Promise((resolve) => {
+        let left = N;
+        socket.on(CLIENT_EVENTS.chatEnd, (end) => {
+            byJob.get(end.jobId).end = end;
+            left -= 1;
+            if (left === 0) resolve();
+        });
+    });
+
+    const startedAt = Date.now();
+    const acks = await Promise.all(
+        [...byJob.keys()].map((jobId) =>
+            socket.timeout(10_000).emitWithAck(SERVER_EVENTS.chatStart, {
+                jobId,
+                body: { model: 'mimo-v2.5-pro', stream: true, messages: [{ role: 'user', content: jobId }] },
+            }),
+        ),
+    );
+    assert.equal(acks.filter((a) => a.accepted).length, N, 'phải nhận hết, không cái nào rơi');
+
+    await allEnded;
+    const elapsed = Date.now() - startedAt;
+
+    for (const [jobId, slot] of byJob) {
+        assert.equal(slot.end.ok, true, `${jobId} phải xong sạch, nhận: ${slot.end.code}`);
+        const text = Buffer.concat(slot.parts).toString('utf8');
+        // ⛔ Dấu của CHÍNH lượt đó, và TUYỆT ĐỐI không có dấu của lượt nào khác.
+        assert.equal((text.match(new RegExp(`"${jobId}"`, 'g')) ?? []).length, PARTS, `${jobId} thiếu/thừa mảnh`);
+        assert.ok(!/"job-(?!\d+")/.test(text));
+        for (const other of ['job-0', 'job-1', 'job-119']) {
+            if (other !== jobId) assert.ok(!text.includes(`"${other}"`), `${jobId} lẫn byte của ${other}`);
+        }
+        assert.ok(text.endsWith('data: [DONE]\n\n'), `${jobId} mất mảnh cuối`);
+        assert.deepEqual(slot.seqs, slot.seqs.map((_, i) => i + 1), `${jobId} lệch số thứ tự`);
+        assert.equal(slot.end.seq, slot.seqs.length);
+    }
+
+    // Không phải mốc hiệu năng để bám, chỉ là lưới bắt ca "chạy tuần tự" (120 lượt × 24ms nối đuôi
+    // nhau là ~3s; song song thật thì xong trong vài trăm ms).
+    assert.ok(elapsed < 8_000, `120 lượt song song mất ${elapsed}ms — nghi bị tuần tự hoá`);
 });

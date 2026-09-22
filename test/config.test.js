@@ -44,13 +44,19 @@ test('endpoint đã có /v1 thì KHÔNG nối thêm /v1 lần nữa', () => {
 
 test('số không hợp lệ rơi về mặc định thay vì thành NaN', () => {
     const { config } = loadConfig({ ...FULL, XTR_MAX_CONCURRENCY: 'nhieu', XTR_FLUSH_BYTES: '-5' });
-    assert.equal(config.maxConcurrency, 4);
+    assert.equal(config.maxConcurrency, 16);
     assert.equal(config.flushBytes, 16_384);
 });
 
 test('số hợp lệ được nhận', () => {
     const { config } = loadConfig({ ...FULL, XTR_MAX_CONCURRENCY: '12' });
     assert.equal(config.maxConcurrency, 12);
+});
+
+test('số tiến trình mặc định bám theo số lõi, và đặt tay thì nghe theo', () => {
+    const { config } = loadConfig(FULL);
+    assert.ok(config.workers >= 1 && config.workers <= 8, `workers = ${config.workers}`);
+    assert.equal(loadConfig({ ...FULL, XTR_WORKERS: '3' }).config.workers, 3);
 });
 
 test('bảng cấu hình CHE khoá và bí mật', () => {

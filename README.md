@@ -55,6 +55,35 @@ minh mình hiểu **vì sao** — và người sau bỏ header đi sẽ không h
   cổng gác theo đúng chuỗi này. *Backend dựng thân request nên nó lo phần này; container không tự
   chèn gì vào thân.*
 
+## Đa tiến trình & hiệu năng
+
+Một container có thể phải gánh **rất nhiều** lượt cùng lúc, nên ba thứ được làm sẵn:
+
+**1. Nhiều tiến trình, không phải nhiều luồng.** `XTR_WORKERS` (mặc định = số lõi, trần 8) fork bấy
+nhiêu tiến trình con; mỗi con mở **một kết nối riêng** về backend và tự khai là một **làn** riêng,
+nên backend rải tải giữa chúng mà không cần biết gì về cụm bên này. Tiến trình chính chỉ giám sát:
+con nào chết thì dựng lại (lùi dần **chỉ khi** con chết sớm — con chạy ngon hàng giờ rồi mới chết
+phải được dựng lại ngay, lùi dần ở đó là tự rút công suất vì một sự cố đã qua).
+
+*Vì sao không `worker_threads`:* việc ở đây gần như toàn I/O, mà luồng phụ chỉ giúp khi nghẽn CPU
+thuần. Phần CPU còn lại (đóng gói frame, nối Buffer, TLS) nằm rải khắp tầng mạng của Node — đẩy nó
+sang luồng khác là copy byte qua lại, đắt hơn phần tiết kiệm được.
+
+**2. Byte thô suốt tuyến.** SSE không bao giờ bị giải mã ra chuỗi rồi mã hoá lại về UTF-8. Bỏ được
+hai lần đụng vào cùng một khối byte mỗi mảnh, **và** bỏ luôn cái bẫy ký tự nhiều byte bị cắt đôi giữa
+hai mảnh mạng.
+
+**3. Áp lực ngược THẬT.** Chạm `XTR_WRITE_HIGH_WATER` frame đang chờ gửi thì container **ngừng đọc
+upstream** cho tới khi dây thoáng — TCP tự khép cửa sổ về phía hãng. Không có chốt này thì một backend
+đọc chậm làm bộ đệm phình theo tốc độ upstream sinh chữ: RAM tăng không có trần, đúng lúc tải nặng nhất.
+
+Gom mảnh (`XTR_FLUSH_INTERVAL_MS` 25ms / `XTR_FLUSH_BYTES` 16KB) cắt gần hết chi phí đóng gói frame
+mà mắt người không phân biệt nổi (ngưỡng cảm nhận ~100ms).
+
+**Đo được:** `test/link.integration.test.js` chạy **120 lượt song song** qua MỘT tiến trình (1.560
+frame SSE) xong trong **~1,1 giây**, và kiểm từng lượt: đủ mảnh, `seq` liên tục, mảnh `[DONE]` không
+mất, và **không lượt nào lẫn một byte nào sang lượt khác**.
+
 ## Nguyên tắc thiết kế (đọc trước khi sửa)
 
 **Container là ống dẫn trung thành.** Byte SSE của upstream đi lên backend **nguyên văn** — không
@@ -105,7 +134,7 @@ cơ hội khác không* (mã HTTP trả khách).
 ## Kiểm thử
 
 ```bash
-npm test     # 48 test, zero-dep (node:test)
+npm test     # 55 test, zero-dep (node:test)
 ```
 
 Bài quan trọng nhất là `test/link.integration.test.js`: dựng **socket.io server thật** + **máy chủ

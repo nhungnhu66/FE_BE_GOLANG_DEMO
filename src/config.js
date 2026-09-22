@@ -6,6 +6,17 @@
  * thiếu thì chết NGAY kèm danh sách tên đã thử, thay vì chạy tiếp rồi hỏng ở request đầu tiên của khách.
  */
 
+import { availableParallelism, cpus } from 'node:os';
+
+/** Số lõi dùng được của container. `availableParallelism` tôn trọng cgroup, `cpus()` thì không. */
+function cpuCount() {
+    try {
+        return Math.max(1, availableParallelism());
+    } catch {
+        return Math.max(1, cpus().length || 1);
+    }
+}
+
 /** Đích mặc định — verify LIVE (xem `code.txt`), đổi được bằng env. */
 export const DEFAULT_API_BASE_URL = 'https://api-sgp-oc.xiaomimimo.com/v1';
 
@@ -90,8 +101,34 @@ export function loadConfig(env = process.env) {
         ),
 
         // ── Tuỳ chỉnh vận hành ─────────────────────────────────────────────
-        /** Trần số lượt chạy CÙNG LÚC. Vượt trần thì từ chối bằng `busy` để backend đổi gateway khác. */
-        maxConcurrency: take('maxConcurrency', pickInt(env, ['XTR_MAX_CONCURRENCY'], 4)),
+        /**
+         * SỐ TIẾN TRÌNH con. Mặc định = số CPU (trần 8).
+         *
+         * ⛔ Node chạy JavaScript trên MỘT luồng. Việc ở đây gần như toàn I/O (gọi upstream + đẩy byte
+         * lên dây) nên một tiến trình đã gánh được rất nhiều lượt — nhưng phần CPU còn lại (đóng gói
+         * frame socket.io, nối Buffer, TLS) thì vẫn dồn vào đúng luồng đó, và đó mới là nút thắt khi
+         * tải cao. Nhiều tiến trình = nhiều vòng lặp sự kiện = dùng được hết lõi của container.
+         *
+         * Mỗi tiến trình mở MỘT kết nối riêng về backend và tự khai là một LÀN riêng, nên backend rải
+         * tải giữa chúng mà không cần biết gì về cụm bên này.
+         */
+        workers: take('workers', pickInt(env, ['XTR_WORKERS'], Math.min(cpuCount(), 8))),
+        /**
+         * Trần số lượt chạy CÙNG LÚC **mỗi tiến trình**. Vượt trần thì từ chối bằng `busy` để backend
+         * đổi gateway khác. Công suất cả container = `workers × maxConcurrency`.
+         *
+         * 16 chứ không phải 4: mỗi lượt chờ chủ yếu là chờ upstream nghĩ, gần như không tốn CPU. Đặt
+         * thấp là tự bóp cổ chai ở chỗ không có nút thắt.
+         */
+        maxConcurrency: take('maxConcurrency', pickInt(env, ['XTR_MAX_CONCURRENCY'], 16)),
+        /**
+         * Mức nước cao của bộ đệm gửi (số frame đang chờ đẩy đi). Chạm mức này thì NGỪNG đọc upstream
+         * cho tới khi dây thoáng.
+         *
+         * ⛔ Không có trần này thì một backend đọc chậm làm bộ đệm phình theo tốc độ upstream sinh chữ
+         * — RAM tăng không có trần, và tăng đúng lúc đang tải nặng nhất.
+         */
+        writeHighWater: take('writeHighWater', pickInt(env, ['XTR_WRITE_HIGH_WATER'], 64)),
         /** Trần tổng một lượt (backend gửi `deadlineMs` riêng thì lấy giá trị NHỎ HƠN). */
         requestTimeoutMs: take('requestTimeoutMs', pickInt(env, ['XTR_REQUEST_TIMEOUT_MS'], 600_000)),
         /** Chờ chữ đầu — không có chữ nào trong ngần này là coi gateway câm. */

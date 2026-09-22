@@ -10,6 +10,8 @@
  * mức thật của tài khoản cho một câu trả lời không ai nhận (§16.2).
  */
 
+import { randomUUID } from 'node:crypto';
+
 import { io } from 'socket.io-client';
 
 import { ChunkPump } from './chunk-pump.js';
@@ -27,6 +29,16 @@ export class GatewayLink {
         this.statsTimer = undefined;
         this.modelsTimer = undefined;
         this.startedAt = Date.now();
+        /**
+         * Danh tính của TIẾN TRÌNH này, ổn định qua các lần nối lại.
+         *
+         * ⛔ Một container chạy nhiều tiến trình, và nhiều container có thể dùng CHUNG một tài khoản.
+         * Nếu backend khoá sổ theo email thì làn sau ghi đè làn trước và pool tưởng mình chỉ có một
+         * gateway — tức vứt gần hết công suất vừa dựng ra. Khoá là `email#instanceId`; email vẫn là
+         * thứ để nhóm lại khi cần hỏi "tài khoản nào đang hỏng".
+         */
+        this.instanceId = randomUUID();
+        this.workerId = Number.parseInt(process.env.XTR_WORKER_ID ?? '0', 10) || 0;
         /** Danh sách model đọc được từ upstream. `null` = CHƯA ĐỌC ĐƯỢC (khác hẳn mảng rỗng). */
         this.models = null;
         this.modelsError = null;
@@ -50,6 +62,8 @@ export class GatewayLink {
                         secret: config.gatewaySecret,
                     }),
                     label: config.label || undefined,
+                    instanceId: this.instanceId,
+                    workerId: this.workerId,
                 }),
             reconnection: true,
             reconnectionAttempts: Infinity,
@@ -100,10 +114,43 @@ export class GatewayLink {
         });
     }
 
+    /**
+     * Dây có đang tắc không — đo bằng số frame còn nằm trong bộ đệm gửi của engine.io.
+     *
+     * ⚠️ Đây là chi tiết NỘI BỘ của thư viện, nên mọi lần đọc đều optional-chain và thiếu thì coi như
+     * KHÔNG tắc. Hỏng vì một cơ chế phòng xa là kiểu hỏng tệ nhất: nó giết đường đang chạy tốt.
+     */
+    congested() {
+        const pending = this.socket?.io?.engine?.writeBuffer?.length ?? 0;
+        return pending >= this.config.writeHighWater;
+    }
+
+    /** Chờ bộ đệm gửi thoáng lại. Luôn có hạn giờ — chờ vô hạn là treo cả lượt. */
+    drain() {
+        const engine = this.socket?.io?.engine;
+        if (!engine) return Promise.resolve();
+        return new Promise((resolve) => {
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                engine.off?.('drain', finish);
+                clearTimeout(timer);
+                resolve();
+            };
+            const timer = setTimeout(finish, 5_000);
+            timer.unref?.();
+            engine.on?.('drain', finish);
+        });
+    }
+
     sendHello() {
         this.socket.emit(CLIENT_EVENTS.hello, {
             v: PROTOCOL_VERSION,
             email: this.config.accountEmail,
+            instanceId: this.instanceId,
+            workerId: this.workerId,
+            workers: this.config.workers,
             label: this.config.label || null,
             // Chỉ MÁY CHỦ của upstream, KHÔNG bao giờ kèm khoá — dây này để chẩn đoán, không phải để
             // vận chuyển bí mật.
@@ -120,6 +167,7 @@ export class GatewayLink {
         this.statsTimer = setInterval(() => {
             if (!this.socket?.connected) return;
             this.socket.emit(CLIENT_EVENTS.stats, {
+                instanceId: this.instanceId,
                 ...this.jobs.snapshot(),
                 uptimeSec: Math.round((Date.now() - this.startedAt) / 1000),
                 rssMb: Math.round(process.memoryUsage().rss / 1_048_576),
@@ -196,6 +244,7 @@ export class GatewayLink {
         const pump = new ChunkPump({
             intervalMs: this.config.flushIntervalMs,
             maxBytes: this.config.flushBytes,
+            pressure: { congested: () => this.congested(), drain: () => this.drain() },
             onFlush: (data, seq) => {
                 // Rớt kết nối giữa chừng: đừng nhét frame vào bộ đệm của socket.io (nó sẽ gửi lại sau
                 // khi nối lại — lúc đó backend đã bỏ cuộc và frame chỉ còn là rác chiếm bộ nhớ). Huỷ

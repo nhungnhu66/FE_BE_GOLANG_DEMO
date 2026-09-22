@@ -2,19 +2,27 @@
  * Gọi upstream MiMo (wire OpenAI-compatible) bằng `fetch` có sẵn của Node — không thêm SDK nào.
  *
  * ⛔ Container là ỐNG DẪN TRUNG THÀNH: byte SSE của upstream được chuyển tiếp NGUYÊN VĂN, không parse
- * lại, không dựng lại, không sắp xếp lại. Backend đã có bộ đọc SSE của nó (dùng chung với mọi provider
- * OpenAI-compatible khác) — dịch ở đây lần nữa là đẻ ra bộ dịch THỨ HAI cho cùng một định dạng, và bản
- * ít lưu lượng hơn sẽ âm thầm thiếu mọi bản vá của bản kia.
+ * lại, không dựng lại, không giải mã ra chuỗi. Backend đã có bộ đọc SSE của nó (dùng chung với mọi
+ * provider OpenAI-compatible khác) — dịch ở đây lần nữa là đẻ ra bộ dịch THỨ HAI cho cùng một định
+ * dạng, và bản ít lưu lượng hơn sẽ âm thầm thiếu mọi bản vá của bản kia.
  *
  * Ngoại lệ DUY NHẤT của "không parse": dò xem đã có dòng `data:` nào chưa, để biết upstream CÂM. Đây
- * là thứ cả cơ chế đổi gateway dựa vào, và nó chỉ đọc chứ không sửa byte nào.
+ * là thứ cả cơ chế đổi gateway dựa vào, và nó chỉ ĐỌC chứ không sửa byte nào.
  */
+
+import { Buffer } from 'node:buffer';
 
 import { REQUIRED_USER_AGENT } from './config.js';
 import { END_CODES } from './protocol.js';
 
 /** Cắt thân lỗi trước khi đưa lên dây — đủ để chẩn, không đủ để ngập log. */
 const ERROR_BODY_CAP = 2_000;
+
+/** Mốc "có dòng dữ liệu SSE": đầu luồng, hoặc ngay sau một dấu xuống dòng. */
+const DATA_AT_LINE_START = Buffer.from('\ndata:', 'utf8');
+const DATA_PREFIX = Buffer.from('data:', 'utf8');
+/** Giữ lại ngần này byte cuối mỗi mảnh để mốc bị cắt ĐÔI giữa hai mảnh mạng vẫn dò ra. */
+const SCAN_CARRY = DATA_AT_LINE_START.length - 1;
 
 function buildHeaders(apiKey, accept) {
     return {
@@ -71,12 +79,15 @@ export async function listModels({ baseUrl, apiKey, signal, timeoutMs = 15_000 }
  * Never-throw — luôn trả kết cục có `code` thuộc `END_CODES` để backend rẽ nhánh bằng MÃ chứ không
  * bằng câu chữ.
  *
+ * `onChunk` được **await**: trả về Promise là cách bên gọi nói "dây đang tắc, khoan đã". Vòng lặp
+ * dừng đọc thì TCP tự khép cửa sổ về phía upstream — áp lực ngược đi hết chặng, không phình RAM.
+ *
  * @param {object}      p
  * @param {AbortSignal} p.signal        khách huỷ / backend huỷ / container tắt máy
  * @param {number}      p.firstTokenMs  không có dòng `data:` nào trong ngần này ⇒ CÂM
  * @param {number}      p.deadlineMs    trần tổng cả lượt
  * @param {Function}    p.onOpen        gọi khi có response header (đã nối được, chưa chắc có chữ)
- * @param {Function}    p.onChunk       gọi với chuỗi byte SSE NGUYÊN VĂN
+ * @param {Function}    p.onChunk       gọi với Buffer byte SSE NGUYÊN VĂN; await được
  */
 export async function streamChat({ baseUrl, apiKey, body, signal, firstTokenMs, deadlineMs, onOpen, onChunk }) {
     const startedAt = Date.now();
@@ -143,27 +154,33 @@ export async function streamChat({ baseUrl, apiKey, body, signal, firstTokenMs, 
         };
     }
 
-    const decoder = new TextDecoder('utf-8');
     let bytes = 0;
     let sawData = false;
+    let atStreamStart = true;
+    let carry = null;
 
     try {
         for await (const piece of res.body) {
-            const text = decoder.decode(piece, { stream: true });
-            if (!text) continue;
-            bytes += text.length;
-            // Đã có dòng dữ liệu thật ⇒ tháo đồng hồ câm. Dòng bình luận (`: keep-alive`) KHÔNG tính:
-            // upstream vỗ về kết nối không có nghĩa là nó đang sinh chữ.
-            if (!sawData && DATA_LINE_RE.test(text)) {
-                sawData = true;
-                disarmMute();
+            if (!piece || piece.length === 0) continue;
+            const chunk = Buffer.isBuffer(piece) ? piece : Buffer.from(piece.buffer, piece.byteOffset, piece.byteLength);
+            bytes += chunk.length;
+
+            if (!sawData) {
+                // Ghép thêm vài byte cuối của mảnh trước: mốc `\ndata:` có thể bị mạng cắt ĐÔI, và bỏ
+                // sót nó thì đồng hồ câm cắt oan một lượt đang chạy tốt.
+                const hay = carry ? Buffer.concat([carry, chunk]) : chunk;
+                if ((atStreamStart && hay.indexOf(DATA_PREFIX) === 0) || hay.indexOf(DATA_AT_LINE_START) >= 0) {
+                    sawData = true;
+                    disarmMute();
+                } else {
+                    carry = hay.length > SCAN_CARRY ? Buffer.from(hay.subarray(hay.length - SCAN_CARRY)) : hay;
+                }
+                atStreamStart = false;
             }
-            onChunk(text);
-        }
-        const tail = decoder.decode();
-        if (tail) {
-            bytes += tail.length;
-            onChunk(tail);
+
+            // Chuyển tiếp NGUYÊN VĂN, và await để nhận áp lực ngược khi dây tắc.
+            const wait = onChunk(chunk);
+            if (wait) await wait;
         }
     } catch (err) {
         if (signal?.aborted) return { ok: false, code: END_CODES.canceled, error: 'canceled', bytes };
@@ -181,11 +198,3 @@ export async function streamChat({ baseUrl, apiKey, body, signal, firstTokenMs, 
 
     return { ok: true, code: END_CODES.ok, status: res.status, bytes, durationMs: Date.now() - startedAt };
 }
-
-/**
- * Dòng dữ liệu SSE — đầu luồng hoặc ngay sau một dấu xuống dòng.
- *
- * ⚠️ Khai ở ngoài để KHÔNG dùng cờ `g`: regex có `g` mang theo `lastIndex` giữa các lần gọi `.test()`,
- * nên cùng một chuỗi lúc đúng lúc sai — đúng loại lỗi chỉ hiện ra khi chạy thật.
- */
-const DATA_LINE_RE = /(^|\n)data:/;
