@@ -148,6 +148,14 @@ export function loadConfig(env = process.env) {
     };
 
     config.apiBaseUrl = normalizeBaseUrl(config.apiBaseUrl);
+    /**
+     * ⛔ Hạ email về CHỮ THƯỜNG, vì backend cũng hạ trước khi ký lại để kiểm.
+     *
+     * Không chuẩn hoá ở đây thì một biến môi trường viết hoa (`Ten@Gmail.com`) sẽ sinh chữ ký trên
+     * chuỗi khác chuỗi backend ký ⇒ bị từ chối `bad_sig` VĨNH VIỄN. Và triệu chứng là thứ không ai
+     * đoán ra: chữ ký đúng, bí mật đúng, đồng hồ đúng — chỉ khác mỗi chữ hoa.
+     */
+    if (config.accountEmail) config.accountEmail = config.accountEmail.toLowerCase();
 
     const missing = [];
     if (!config.gatewayUrl) missing.push('XTR_GATEWAY_URL (địa chỉ socket.io của XTRouter_Backend)');

@@ -70,6 +70,11 @@ test('bảng cấu hình CHE khoá và bí mật', () => {
     assert.ok(key.value.startsWith('sk-a'));
 });
 
+test('email được hạ về chữ thường — backend cũng hạ trước khi ký lại, lệch là bad_sig vĩnh viễn', () => {
+    const { config } = loadConfig({ ...FULL, XTR_ACCOUNT_EMAIL: '  Ten.Toi@Gmail.COM ' });
+    assert.equal(config.accountEmail, 'ten.toi@gmail.com');
+});
+
 test('maskSecret không làm lộ chuỗi ngắn', () => {
     assert.ok(!maskSecret('abcdefgh').includes('cdefgh'));
     assert.equal(maskSecret(''), '(trống)');
