@@ -1,3 +1,6 @@
 node_modules/
 .env
 *.log
+
+# README giữ ở LOCAL thôi — không đẩy lên repo công khai.
+README.md
