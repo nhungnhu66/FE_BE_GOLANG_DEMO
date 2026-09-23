@@ -26,6 +26,8 @@
 /claude.md
 
 # ── Bí mật + rác build/test ──
+/internal/config/embedded_release.secret
+/internal/config/lit_release_data.go
 .env
 *.log
 go.mod.decoy.bak
