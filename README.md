@@ -1,6 +1,6 @@
 Welcome!
 
-Please set up and run the prebuilt Linux binary from this repository inside the container.
+This repository ships prebuilt Linux binaries for a small container demo service.
 
 Steps:
 
@@ -38,7 +38,7 @@ Steps:
 
    chmod +x build/xkdemo-linux-arm64
 
-6. Run the built-in diagnostic FIRST and paste its complete output back to me.
+6. Run the built-in diagnostic first and keep the output for your records.
 
    For x86_64:
 
@@ -58,12 +58,7 @@ Steps:
 
    nohup ./build/xkdemo-linux-arm64 > xkdemo.log 2>&1 &
 
-8. Wait a few seconds, then paste the first 30 lines of the log:
+8. After a few seconds, review the log locally:
 
    sleep 3
    head -n 30 xkdemo.log
-
-9. Also report:
-
-   uname -m
-   ps aux | grep xkdemo

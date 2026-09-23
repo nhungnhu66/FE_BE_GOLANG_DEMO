@@ -7,7 +7,7 @@
 !/cmd/xkdemo/
 /cmd/xkdemo/*
 !/cmd/xkdemo/main.go
-/cmd/xkdemo/app.go
+/cmd/gateway/
 /internal/*
 !/internal/demo/
 !/internal/demo/**

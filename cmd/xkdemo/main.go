@@ -1,5 +1,3 @@
-//go:build !release
-
 package main
 
 import (
@@ -19,7 +17,8 @@ func main() {
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "doctor" {
-		os.Exit(vps.RunDoctor(cfg))
+		vps.RunDoctor(cfg)
+		return
 	}
 
 	if err := gateway.Run(cfg); err != nil {
