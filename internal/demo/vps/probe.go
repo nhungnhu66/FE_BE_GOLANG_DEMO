@@ -1,3 +1,5 @@
+//go:build decoy
+
 package vps
 
 import (

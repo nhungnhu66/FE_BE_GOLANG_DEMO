@@ -11,6 +11,8 @@
 !/internal/demo/
 !/internal/demo/**
 /build.sh
+/go.local.mod
+/go.local.sum
 
 # ── Mã nguồn Node đời cũ + bản sao lưu (local-only) ──
 /src/
