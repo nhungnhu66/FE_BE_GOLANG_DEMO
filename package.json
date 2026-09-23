@@ -11,7 +11,8 @@
     "scripts": {
         "start": "node src/index.js",
         "doctor": "node src/doctor.js",
-        "test": "node --test"
+        "test": "node --test",
+        "shape": "node src/shape-probe.js"
     },
     "dependencies": {
         "socket.io-client": "^4.8.1"
