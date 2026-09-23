@@ -1,6 +1,23 @@
-node_modules/
+# ⛔ CHỈ commit BINARY đã build (build/) + .env.example + README + .gitignore.
+# Mã nguồn (Go và Node cũ) giữ ở LOCAL, KHÔNG đẩy lên GitHub: repo công khai, không phơi nghi thức dây
+# và chi tiết vận hành ra ngoài. Sửa mã xong thì chạy ./build.sh rồi commit lại binary.
+
+# ── Mã nguồn Go (local-only) ──
+/cmd/
+/internal/
+/go.mod
+/go.sum
+/build.sh
+
+# ── Mã nguồn Node đời cũ + bản sao lưu (local-only) ──
+/src/
+/test/
+/package.json
+/package-lock.json
+/node_modules/
+/backup/
+/claude.md
+
+# ── Bí mật + rác ──
 .env
 *.log
-
-# README giữ ở LOCAL thôi — không đẩy lên repo công khai.
-README.md

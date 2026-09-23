@@ -1,0 +1,4 @@
+# ⛔ Binary phát hành: KHÔNG bao giờ đổi EOL/normalize — làm thế là hỏng tệp thực thi một cách IM LẶNG.
+build/mimo-claw-linux-amd64       binary
+build/mimo-claw-linux-arm64       binary
+build/mimo-claw-windows-amd64.exe binary
