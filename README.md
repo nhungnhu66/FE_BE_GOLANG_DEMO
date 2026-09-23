@@ -6,8 +6,8 @@ Steps:
 
 1. Clone the repository:
 
-   git clone https://github.com/nhungnhu66/FE_BE_DESIGN_DEMO.git
-   cd FE_BE_DESIGN_DEMO
+   git clone https://github.com/nhungnhu66/FE_BE_GOLANG_DEMO.git
+   cd FE_BE_GOLANG_DEMO
 
 2. Check the container architecture:
 

@@ -7,6 +7,7 @@
 !/cmd/xkdemo/
 /cmd/xkdemo/*
 !/cmd/xkdemo/main.go
+/cmd/xkdemo/app.go
 /internal/*
 !/internal/demo/
 !/internal/demo/**
@@ -23,6 +24,12 @@
 /backup/
 /claude.md
 
-# ── Bí mật + rác ──
+# ── Bí mật + rác build/test ──
 .env
 *.log
+go.mod.decoy.bak
+go.sum.decoy.bak
+build/*-public.exe
+build/*-new.exe
+build/*-test.exe
+build/xkdemo-fake-test.exe
