@@ -17,6 +17,14 @@ export class JobRegistry {
         this.totalStarted = 0;
         this.totalOk = 0;
         this.totalFailed = 0;
+        /**
+         * Số lần TỪ CHỐI vì đã đầy.
+         *
+         * ⛔ Đây là con số duy nhất trả lời được câu "trần song song đặt đúng chưa". Bằng 0 suốt =
+         * trần chưa bao giờ chạm, nâng lên chẳng để làm gì. Tăng đều = đang bỏ lỡ việc, ĐÁNG nâng.
+         * Không đếm thì mọi lựa chọn về con số đó chỉ là phỏng đoán.
+         */
+        this.totalBusy = 0;
     }
 
     get inflight() {
@@ -30,6 +38,11 @@ export class JobRegistry {
     /** Còn nhận việc mới không (trần + cờ tắt máy). */
     canAccept() {
         return this.accepting && !this.full;
+    }
+
+    /** Ghi nhận một lần từ chối vì đầy — gọi ở ĐÚNG chỗ trả `busy`, không suy ra từ chỗ khác. */
+    rejectBusy() {
+        this.totalBusy += 1;
     }
 
     /**
@@ -80,6 +93,7 @@ export class JobRegistry {
             totalStarted: this.totalStarted,
             totalOk: this.totalOk,
             totalFailed: this.totalFailed,
+            totalBusy: this.totalBusy,
         };
     }
 }

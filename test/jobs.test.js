@@ -67,3 +67,13 @@ test('close một lượt không tồn tại KHÔNG làm lệch bộ đếm', ()
     assert.equal(r.close('ma', true), false);
     assert.equal(r.snapshot().totalOk, 0);
 });
+
+test('đếm số lần từ chối vì ĐẦY — con số duy nhất nói được trần song song đặt đúng chưa', () => {
+    // Bằng 0 suốt = trần chưa bao giờ chạm, nâng lên chẳng để làm gì. Tăng đều = đang bỏ lỡ việc.
+    const r = new JobRegistry({ maxConcurrency: 1 });
+    r.open('a');
+    assert.equal(r.canAccept(), false);
+    r.rejectBusy();
+    r.rejectBusy();
+    assert.equal(r.snapshot().totalBusy, 2);
+});

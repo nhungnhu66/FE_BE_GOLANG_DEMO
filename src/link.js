@@ -224,6 +224,8 @@ export class GatewayLink {
         }
         if (!this.jobs.canAccept()) {
             // KHÔNG phải lỗi của container — backend đổi gateway khác và KHÔNG phạt gateway này.
+            // Đếm lại: đây là con số duy nhất nói được "trần song song đặt đúng chưa".
+            this.jobs.rejectBusy();
             ack?.({ accepted: false, code: END_CODES.busy, inflight: this.jobs.inflight });
             return;
         }
