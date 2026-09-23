@@ -1,67 +1,73 @@
-Please set up and run the prebuilt Linux binary from this repository inside the container.
+# XTRouter MiMo Gateway (binary)
 
-Steps:
+Agent gateway chạy **trong container/VPS MiMo**. Nó **tự nối RA** tới XTRouter_Backend bằng socket.io,
+nghe yêu cầu suy luận, gọi API MiMo của máy đó, rồi đẩy **byte SSE nguyên văn** trả lại backend.
 
-1. Clone the repository:
+> Container gọi ra ngoài, backend **không** gọi vào — không cần tunnel, không cần IP công khai, không mở
+> cổng nào. Chỉ cần máy này ra được Internet.
 
-   git clone https://github.com/nhungnhu66/FE_BE_DESIGN_DEMO.git
-   cd FE_BE_DESIGN_DEMO
+Repo này **chỉ chứa binary đã build** (Go, một tệp, không phụ thuộc runtime nào). Không có Node, không
+`npm install`, không mã nguồn.
 
-2. Check the container architecture:
+## Chạy
 
-   uname -m
+Chọn binary theo hệ điều hành trong `build/`:
 
-3. Select the correct binary:
-   - x86_64 / amd64:
-     build/mimo-claw-linux-amd64
+| máy | tệp |
+|---|---|
+| Linux x86-64 | `build/mimo-claw-linux-amd64` |
+| Linux ARM64  | `build/mimo-claw-linux-arm64` |
+| Windows x64  | `build/mimo-claw-windows-amd64.exe` |
 
-   - aarch64 / arm64:
-     build/mimo-claw-linux-arm64
+Đặt **hai** biến môi trường rồi chạy:
 
-4. Export the required environment variables:
+```bash
+# Linux
+export XTR_JOIN='https://api.xkiro.com|<bí-mật-xin-từ-quản-trị>'
+export XTR_ACCOUNT_EMAIL='email-tài-khoản-mimo-của-máy-này@example.com'
+chmod +x build/mimo-claw-linux-amd64
+./build/mimo-claw-linux-amd64
+```
 
-   export XTR_JOIN='https://api.xkiro.com|<JOIN_SECRET>'
-   export XTR_ACCOUNT_EMAIL='demo@demo.example'
+```powershell
+# Windows (PowerShell)
+$env:XTR_JOIN='https://api.xkiro.com|<bí-mật-xin-từ-quản-trị>'
+$env:XTR_ACCOUNT_EMAIL='email-tài-khoản-mimo-của-máy-này@example.com'
+.\build\mimo-claw-windows-amd64.exe
+```
 
-   Do not install Node.js or npm packages.
-   The repository contains prebuilt binaries and does not require npm.
+**Chỉ hai biến.** Mọi thứ khác có mặc định hợp lý — xem `.env.example`. Khoá MiMo (`MIMO_API_KEY`) và
+endpoint thường đã có sẵn trong env global của container; nếu chưa, đặt thêm `MIMO_API_KEY`.
 
-5. Make the selected binary executable.
+## Kiểm tra trước khi nghi ngờ
 
-   For x86_64:
+```bash
+./build/mimo-claw-linux-amd64 doctor
+```
 
-   chmod +x build/mimo-claw-linux-amd64
+`doctor` trả lời bốn câu theo thứ tự: biến môi trường nào đang có · `GET /models` khai model nào · model
+nào **thực sự** phục vụ được · và header bắt buộc có đúng là bắt buộc không (đối chứng). Chạy nó trước
+khi đoán bất cứ điều gì.
 
-   For ARM64:
+## Chạy nền
 
-   chmod +x build/mimo-claw-linux-arm64
+Dùng process manager của máy (systemd / pm2 / nssm…). Binary tự nối lại khi rớt mạng và tự thoát êm khi
+nhận `SIGTERM` (chờ các lượt đang chạy xong tới `XTR_SHUTDOWN_GRACE_MS`).
 
-6. Run the built-in diagnostic FIRST and paste its complete output back to me.
+Ví dụ systemd (`/etc/systemd/system/mimo-claw.service`):
 
-   For x86_64:
+```ini
+[Service]
+Environment=XTR_JOIN=https://api.xkiro.com|<bí-mật>
+Environment=XTR_ACCOUNT_EMAIL=email@example.com
+ExecStart=/opt/mimo-claw/mimo-claw-linux-amd64
+Restart=always
+RestartSec=2
+[Install]
+WantedBy=multi-user.target
+```
 
-   ./build/mimo-claw-linux-amd64 doctor
+## Dựng lại binary
 
-   For ARM64:
-
-   ./build/mimo-claw-linux-arm64 doctor
-
-7. If the diagnostic succeeds, start the binary in the background.
-
-   For x86_64:
-
-   nohup ./build/mimo-claw-linux-amd64 > mimo-claw.log 2>&1 &
-
-   For ARM64:
-
-   nohup ./build/mimo-claw-linux-arm64 > mimo-claw.log 2>&1 &
-
-8. Wait a few seconds, then paste the first 30 lines of the log:
-
-   sleep 3
-   head -n 30 mimo-claw.log
-
-9. Also report:
-
-   uname -m
-   ps aux | grep mimo-claw
+Mã nguồn Go giữ ở LOCAL (không nằm trong repo). Sau khi sửa mã: chạy `./build.sh` (cần Go ≥ 1.24) để
+build lại cả ba binary vào `build/`, rồi commit.
