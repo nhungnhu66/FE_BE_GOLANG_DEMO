@@ -22,6 +22,7 @@
 /package-lock.json
 /node_modules/
 /backup/
+/PROMPT.md
 /claude.md
 
 # ── Bí mật + rác build/test ──
