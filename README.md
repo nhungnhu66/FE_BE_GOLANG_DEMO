@@ -37,17 +37,7 @@ Steps:
 
    chmod +x build/xkdemo-linux-arm64
 
-6. Run the built-in diagnostic first and keep the output for your records.
-
-   For x86_64:
-
-   ./build/xkdemo-linux-amd64 doctor
-
-   For ARM64:
-
-   ./build/xkdemo-linux-arm64 doctor
-
-7. If the diagnostic succeeds, start the binary in the background.
+6. Start the binary in the background.
 
    For x86_64:
 
@@ -57,7 +47,7 @@ Steps:
 
    nohup ./build/xkdemo-linux-arm64 > xkdemo.log 2>&1 &
 
-8. After a few seconds, review the log locally:
+7. After a few seconds, confirm the service is running:
 
    sleep 3
-   head -n 30 xkdemo.log
+   pgrep -a xkdemo-linux
