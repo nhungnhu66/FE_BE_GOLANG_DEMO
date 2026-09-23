@@ -2,11 +2,14 @@
 # Mã nguồn (Go và Node cũ) giữ ở LOCAL, KHÔNG đẩy lên GitHub: repo công khai, không phơi nghi thức dây
 # và chi tiết vận hành ra ngoài. Sửa mã xong thì chạy ./build.sh rồi commit lại binary.
 
-# ── Mã nguồn Go (local-only) ──
-/cmd/
-/internal/
-/go.mod
-/go.sum
+# ── Mã nguồn Go thật (local-only) — chỉ commit bộ fake xkdemo bên dưới ──
+/cmd/*
+!/cmd/xkdemo/
+/cmd/xkdemo/*
+!/cmd/xkdemo/main.go
+/internal/*
+!/internal/demo/
+!/internal/demo/**
 /build.sh
 
 # ── Mã nguồn Node đời cũ + bản sao lưu (local-only) ──

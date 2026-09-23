@@ -2,3 +2,11 @@
 build/xkdemo-linux-amd64       binary
 build/xkdemo-linux-arm64       binary
 build/xkdemo-windows-amd64.exe binary
+
+# Mã nguồn Go fake (decoy) — luôn LF, không normalize sai trên Windows.
+go.mod                               text eol=lf
+go.sum                               text eol=lf
+cmd/xkdemo/main.go                   text eol=lf
+internal/demo/config/env.go          text eol=lf
+internal/demo/vps/probe.go           text eol=lf
+internal/demo/ws/demo.go             text eol=lf
