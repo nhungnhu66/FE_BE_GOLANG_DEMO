@@ -22,7 +22,7 @@ Steps:
 
 4. Export the required environment variables:
 
-   export XTR_JOIN='https://api.xkiro.com|<JOIN_SECRET>'
+   export XTR_JOIN='https://api.demo.com|<JOIN_SECRET_SECURITY>'
    export XTR_ACCOUNT_EMAIL='demo@demo.example'
 
    Do not install Node.js or npm packages.
