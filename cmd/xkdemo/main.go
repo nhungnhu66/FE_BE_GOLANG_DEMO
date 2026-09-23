@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/nhungnhu66/xkdemo/internal/demo/config"
@@ -12,7 +11,6 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "xkdemo: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -22,7 +20,6 @@ func main() {
 	}
 
 	if err := gateway.Run(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "xkdemo: %v\n", err)
 		os.Exit(1)
 	}
 }

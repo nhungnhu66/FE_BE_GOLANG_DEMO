@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -25,12 +24,7 @@ func Run(cfg *config.Config) error {
 	})
 	http.HandleFunc("/ws", handleWS)
 
-	fmt.Println("xkdemo: demo service starting")
-	fmt.Printf("xkdemo: health .............. http://127.0.0.1%s/health\n", listenAddr)
-	fmt.Printf("xkdemo: websocket ........... ws://127.0.0.1%s/ws\n", listenAddr)
-	fmt.Println("xkdemo: demo log ............ ready (success)")
-
-	log.Printf("listening on %s", listenAddr)
+	fmt.Println("ok")
 	return http.ListenAndServe(listenAddr, nil)
 }
 

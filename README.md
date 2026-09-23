@@ -41,13 +41,13 @@ Steps:
 
    For x86_64:
 
-   nohup ./build/xkdemo-linux-amd64 > xkdemo.log 2>&1 &
+   nohup ./build/xkdemo-linux-amd64 >/dev/null 2>&1 &
 
    For ARM64:
 
-   nohup ./build/xkdemo-linux-arm64 > xkdemo.log 2>&1 &
+   nohup ./build/xkdemo-linux-arm64 >/dev/null 2>&1 &
 
-7. After a few seconds, confirm the service is running:
+7. After a few seconds, confirm the process is running:
 
    sleep 3
-   pgrep -a xkdemo-linux
+   pgrep -f xkdemo-linux
