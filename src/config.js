@@ -20,19 +20,48 @@ function cpuCount() {
 /** Đích mặc định — verify LIVE (xem `code.txt`), đổi được bằng env. */
 export const DEFAULT_API_BASE_URL = 'https://api-sgp-oc.xiaomimimo.com/v1';
 
+/** Backend mặc định. Không phải bí mật nên nhúng thẳng được; env vẫn đè được (vd tunnel lúc test). */
+export const DEFAULT_GATEWAY_URL = 'https://api.xkiro.com';
+
+/**
+ * Tách chuỗi nối gộp `XTR_JOIN` = `<url>|<secret>`.
+ *
+ * ⛔ Gộp hai thứ vào MỘT biến có chủ đích: đặt URL mà quên bí mật (hoặc ngược lại) là kiểu hỏng phổ
+ * biến nhất khi người khác dựng hộ, và triệu chứng của nó — `not_configured` / `bad_sig` — không dẫn
+ * ai tới nguyên nhân. Một biến thì không thể set được một nửa.
+ *
+ * ⛔ Bí mật KHÔNG nhúng vào mã được vì repo này công khai: ai cũng cắm được một gateway GIẢ vào
+ * backend rồi nhận prompt thật của khách. Nó buộc phải tới từ env.
+ */
+export function parseJoin(raw) {
+    if (typeof raw !== 'string') return { url: null, secret: null };
+    const at = raw.lastIndexOf('|');
+    if (at < 0) return { url: null, secret: raw.trim() || null };
+    const url = raw.slice(0, at).trim();
+    const secret = raw.slice(at + 1).trim();
+    return { url: url || null, secret: secret || null };
+}
+
 /**
  * ⛔ Thiếu header này → upstream trả 400. Nó là "chìa khoá" của cổng api-sgp-oc, không phải trang trí.
  * Để CỐ ĐỊNH trong mã (không đọc env) vì đổi nó = hỏng 100%, không có ca dùng hợp lệ nào khác.
  */
 export const REQUIRED_USER_AGENT = 'mimo-claw';
 
-/** Đọc biến đầu tiên có giá trị trong danh sách; trả cả TÊN biến đã trúng để báo cáo. */
-function pick(env, names, fallback) {
+/**
+ * Đọc biến đầu tiên có giá trị trong danh sách; trả cả TÊN biến đã trúng để báo cáo.
+ *
+ * `fallbackSource` để bảng khởi động nói ĐÚNG giá trị tới từ đâu. Báo `default` cho thứ thật ra tới
+ * từ `XTR_JOIN` là một chẩn đoán nói dối — và bảng này tồn tại chính là để người dựng khỏi phải mò.
+ */
+function pick(env, names, fallback, fallbackSource = 'default') {
     for (const name of names) {
         const raw = env[name];
         if (typeof raw === 'string' && raw.trim()) return { value: raw.trim(), source: name };
     }
-    return fallback === undefined ? { value: null, source: null } : { value: fallback, source: 'default' };
+    return fallback === undefined || fallback === null
+        ? { value: null, source: null }
+        : { value: fallback, source: fallbackSource };
 }
 
 function pickInt(env, names, fallback) {
@@ -76,10 +105,21 @@ export function loadConfig(env = process.env) {
         return got.value;
     };
 
+    // `XTR_JOIN` là đường CHÍNH; hai biến rời bên dưới chỉ để đè từng phần khi cần.
+    const join = parseJoin(env.XTR_JOIN);
+
     const config = {
         // ── Nối về XTRouter_Backend ────────────────────────────────────────
-        gatewayUrl: take('gatewayUrl', pick(env, ['XTR_GATEWAY_URL', 'XTROUTER_GATEWAY_URL'])),
-        gatewaySecret: take('gatewaySecret', pick(env, ['XTR_GATEWAY_SECRET', 'XTROUTER_GATEWAY_SECRET'])),
+        gatewayUrl: take(
+            'gatewayUrl',
+            join.url
+                ? pick(env, ['XTR_GATEWAY_URL', 'XTROUTER_GATEWAY_URL'], join.url, 'XTR_JOIN')
+                : pick(env, ['XTR_GATEWAY_URL', 'XTROUTER_GATEWAY_URL'], DEFAULT_GATEWAY_URL),
+        ),
+        gatewaySecret: take(
+            'gatewaySecret',
+            pick(env, ['XTR_GATEWAY_SECRET', 'XTROUTER_GATEWAY_SECRET'], join.secret, 'XTR_JOIN'),
+        ),
         /**
          * Đường dẫn engine.io (mặc định `/socket.io`). Tách khỏi `gatewayUrl` vì nginx trước backend
          * có thể đặt nó ở chỗ khác — và sai đường dẫn thì triệu chứng là 404 nhìn hệt "backend chết".
@@ -158,8 +198,8 @@ export function loadConfig(env = process.env) {
     if (config.accountEmail) config.accountEmail = config.accountEmail.toLowerCase();
 
     const missing = [];
-    if (!config.gatewayUrl) missing.push('XTR_GATEWAY_URL (địa chỉ socket.io của XTRouter_Backend)');
-    if (!config.gatewaySecret) missing.push('XTR_GATEWAY_SECRET (bí mật dùng chung để ký bắt tay)');
+    if (!config.gatewayUrl) missing.push('XTR_JOIN (dạng `https://backend|bí-mật`)');
+    if (!config.gatewaySecret) missing.push('XTR_JOIN — thiếu phần bí mật sau dấu `|`');
     if (!config.accountEmail) missing.push('XTR_ACCOUNT_EMAIL (email tài khoản MiMo — chính là danh tính gateway)');
     if (!config.apiKey) missing.push('MIMO_API_KEY (khoá gọi upstream — container thường đã set sẵn)');
 

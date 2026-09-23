@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { describe as describeConfig, DEFAULT_API_BASE_URL, loadConfig, maskSecret, normalizeBaseUrl } from '../src/config.js';
+import {
+    describe as describeConfig,
+    DEFAULT_API_BASE_URL,
+    DEFAULT_GATEWAY_URL,
+    loadConfig,
+    maskSecret,
+    normalizeBaseUrl,
+    parseJoin,
+} from '../src/config.js';
 
 const FULL = {
     XTR_GATEWAY_URL: 'https://api.example.com',
@@ -16,9 +24,10 @@ test('đủ biến bắt buộc thì không thiếu gì', () => {
 });
 
 test('thiếu biến nào thì NÓI RÕ biến đó, không ném một câu chung chung', () => {
+    // `XTR_GATEWAY_URL` KHÔNG còn bắt buộc (có mặc định production) — chỉ bí mật và email là bắt buộc.
     const { missing } = loadConfig({ XTR_GATEWAY_URL: 'https://a.b' });
     assert.equal(missing.length, 3);
-    assert.ok(missing.some((m) => m.includes('XTR_GATEWAY_SECRET')));
+    assert.ok(missing.some((m) => m.includes('XTR_JOIN')));
     assert.ok(missing.some((m) => m.includes('XTR_ACCOUNT_EMAIL')));
     assert.ok(missing.some((m) => m.includes('MIMO_API_KEY')));
 });
@@ -78,4 +87,60 @@ test('email được hạ về chữ thường — backend cũng hạ trước k
 test('maskSecret không làm lộ chuỗi ngắn', () => {
     assert.ok(!maskSecret('abcdefgh').includes('cdefgh'));
     assert.equal(maskSecret(''), '(trống)');
+});
+
+// ── XTR_JOIN: gộp url + bí mật vào MỘT biến ─────────────────────────────────
+
+test('XTR_JOIN tách đúng url và bí mật, và báo ĐÚNG nguồn (không nói dối là "default")', () => {
+    const { config, sources, missing } = loadConfig({
+        XTR_JOIN: 'https://tunnel.example.com|bi-mat-123',
+        XTR_ACCOUNT_EMAIL: 'a@b.com',
+        MIMO_API_KEY: 'k',
+    });
+    assert.deepEqual(missing, []);
+    assert.equal(config.gatewayUrl, 'https://tunnel.example.com');
+    assert.equal(config.gatewaySecret, 'bi-mat-123');
+    // Bảng khởi động phải chỉ đúng chỗ — đó là lý do nó tồn tại.
+    assert.equal(sources.gatewayUrl, 'XTR_JOIN');
+    assert.equal(sources.gatewaySecret, 'XTR_JOIN');
+});
+
+test('không có XTR_JOIN thì url rơi về backend production, KHÔNG coi là thiếu', () => {
+    const { config, missing } = loadConfig({
+        XTR_GATEWAY_SECRET: 'bi-mat',
+        XTR_ACCOUNT_EMAIL: 'a@b.com',
+        MIMO_API_KEY: 'k',
+    });
+    assert.equal(config.gatewayUrl, DEFAULT_GATEWAY_URL);
+    assert.deepEqual(missing, []);
+});
+
+test('biến rời ĐÈ được XTR_JOIN — để đổi mỗi url lúc test mà không phải dựng lại chuỗi', () => {
+    const { config, sources } = loadConfig({
+        XTR_JOIN: 'https://cu.example|bi-mat',
+        XTR_GATEWAY_URL: 'https://moi.example',
+        XTR_ACCOUNT_EMAIL: 'a@b.com',
+        MIMO_API_KEY: 'k',
+    });
+    assert.equal(config.gatewayUrl, 'https://moi.example');
+    assert.equal(sources.gatewayUrl, 'XTR_GATEWAY_URL');
+    assert.equal(config.gatewaySecret, 'bi-mat');
+});
+
+test('url có dấu `|` trong đó vẫn tách đúng — cắt ở dấu CUỐI', () => {
+    // Cắt ở dấu ĐẦU thì một url chứa `|` (hiếm nhưng hợp lệ) sẽ ăn mất phần bí mật.
+    assert.deepEqual(parseJoin('https://a.b/x|y|bi-mat'), { url: 'https://a.b/x|y', secret: 'bi-mat' });
+});
+
+test('XTR_JOIN chỉ có bí mật (không dấu `|`) vẫn nhận, url dùng mặc định', () => {
+    const { config, missing } = loadConfig({ XTR_JOIN: 'chi-bi-mat', XTR_ACCOUNT_EMAIL: 'a@b.com', MIMO_API_KEY: 'k' });
+    assert.equal(config.gatewaySecret, 'chi-bi-mat');
+    assert.equal(config.gatewayUrl, DEFAULT_GATEWAY_URL);
+    assert.deepEqual(missing, []);
+});
+
+test('thiếu bí mật thì nói RÕ là thiếu phần sau dấu `|`, không nói chung chung', () => {
+    const { missing } = loadConfig({ XTR_ACCOUNT_EMAIL: 'a@b.com', MIMO_API_KEY: 'k' });
+    assert.equal(missing.length, 1);
+    assert.ok(missing[0].includes('XTR_JOIN'));
 });

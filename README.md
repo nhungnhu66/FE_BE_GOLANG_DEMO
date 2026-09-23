@@ -19,20 +19,29 @@ cần mở cổng nào trên container — đó chính là thứ đã giết đ�
 ## Chạy
 
 ```bash
+git clone https://github.com/nhungnhu66/XTRouter_Container_Mimo_Claw.git
+cd XTRouter_Container_Mimo_Claw
 npm install --omit=dev      # chỉ 1 phụ thuộc: socket.io-client
+
+export XTR_JOIN='https://api.xkiro.com|<bí-mật-xin-từ-quản-trị>'
+export XTR_ACCOUNT_EMAIL='email-tai-khoan-mimo-cua-container@example.com'
+
 npm run doctor              # kiểm env + endpoint + model + header bắt buộc
 npm start
 ```
 
-Ba biến **bắt buộc** phải tự thêm (khoá MiMo thì container đã có sẵn ở env global):
+**Chỉ hai biến.** Mọi thứ khác có mặc định hợp lý:
 
-| biến | là gì |
+| | |
 |---|---|
-| `XTR_GATEWAY_URL` | gốc backend, ví dụ `https://api.xkiro.com` (KHÔNG kèm `/gw/mimo`) |
-| `XTR_GATEWAY_SECRET` | bí mật dùng chung, phải trùng `MIMO_GATEWAY_SECRET` bên backend |
-| `XTR_ACCOUNT_EMAIL` | email tài khoản MiMo — **chính là danh tính** của gateway này |
+| `XTR_JOIN` | `<url backend>\|<bí mật>`. Gộp một biến để **không set được một nửa** — thiếu nửa nào thì lỗi báo về (`not_configured` / `bad_sig`) đều không dẫn tới nguyên nhân. Bỏ phần url thì dùng mặc định `https://api.xkiro.com`. |
+| `XTR_ACCOUNT_EMAIL` | Email tài khoản MiMo của container này — **chính là danh tính** trên bảng quản trị. Mỗi container một email riêng. |
 
-Xem `.env.example` cho toàn bộ tuỳ chọn. Mọi giá trị đều có mặc định hợp lý, trừ ba cái trên.
+Khoá MiMo và endpoint thì container **đã có sẵn** ở env global, không phải đặt lại. Số tiến trình
+**tự dò theo số lõi**.
+
+⛔ **Bí mật KHÔNG nhúng trong mã**, và đó là cố ý: repo này công khai, nhúng vào là ai cũng cắm được
+một gateway **giả** vào backend rồi nhận prompt thật của khách.
 
 ## `npm run doctor` — chạy TRƯỚC khi nghi ngờ bất cứ thứ gì
 
@@ -117,6 +126,22 @@ cơ hội khác không* (mã HTTP trả khách).
   container không bao giờ nối lại được nữa, hỏng đúng lúc không ai ngồi nhìn.
 - So chữ ký bằng `timingSafeEqual`, không bằng `===`.
 - Khoá upstream **không bao giờ** rời khỏi container: `hello` chỉ khai `scheme://host`.
+
+## Tinh chỉnh (đừng đụng nếu chưa đo được vấn đề)
+
+| biến | mặc định | là gì |
+|---|---|---|
+| `XTR_WORKERS` | số lõi (trần 8) | số tiến trình con |
+| `XTR_MAX_CONCURRENCY` | 16 | trần lượt song song **mỗi tiến trình** |
+| `XTR_WRITE_HIGH_WATER` | 64 | số frame chờ gửi trước khi ngừng đọc upstream |
+| `XTR_REQUEST_TIMEOUT_MS` | 600000 | trần tổng một lượt |
+| `XTR_FIRST_TOKEN_TIMEOUT_MS` | 180000 | không có chữ nào trong ngần này ⇒ coi là câm |
+| `XTR_FLUSH_INTERVAL_MS` / `XTR_FLUSH_BYTES` | 25 / 16384 | nhịp gom mảnh SSE |
+| `XTR_STATS_INTERVAL_MS` | 15000 | nhịp tim gửi lên backend |
+| `XTR_MODELS_REFRESH_MS` | 1800000 | nhịp đọc lại danh sách model |
+| `XTR_SHUTDOWN_GRACE_MS` | 20000 | chờ lượt đang chạy khi nhận SIGTERM |
+| `XTR_GATEWAY_PATH` | `/socket.io` | đường dẫn engine.io nếu nginx đặt khác |
+| `XTR_LOG_LEVEL` / `XTR_LOG_JSON` | info / tắt | mức log, và log JSON một dòng |
 
 ## Cấu trúc
 
