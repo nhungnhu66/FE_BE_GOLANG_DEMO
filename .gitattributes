@@ -1,4 +1,5 @@
 # ⛔ Binary phát hành: KHÔNG bao giờ đổi EOL/normalize — làm thế là hỏng tệp thực thi một cách IM LẶNG.
-build/mimo-claw-linux-amd64       binary
-build/mimo-claw-linux-arm64       binary
-build/mimo-claw-windows-amd64.exe binary
+# Giữ CẢ hai bộ tên: bộ cũ vẫn còn trong git cho tới khi bị gỡ, bộ mới là tên build.sh sinh ra.
+build/xkdemo-linux-amd64          binary
+build/xkdemo-linux-arm64          binary
+build/xkdemo-windows-amd64.exe    binary
